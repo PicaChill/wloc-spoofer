@@ -1,1 +1,0 @@
-# wloc-spoofer
