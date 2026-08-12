@@ -1,0 +1,58 @@
+name: Sync upstream WLOC worker
+
+on:
+  push:
+    paths:
+      - '.github/workflows/sync-upstream-wloc.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch pinned upstream WLOC
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/wloc-upstream
+          git clone --filter=blob:none --no-checkout https://github.com/Yu9191/wloc.git /tmp/wloc-upstream
+          git -C /tmp/wloc-upstream checkout 782e9c5cadf215263d9d168314113e47baaa302c
+          test "$(git -C /tmp/wloc-upstream rev-parse HEAD)" = "782e9c5cadf215263d9d168314113e47baaa302c"
+
+      - name: Mirror worker directory to repository root
+        run: |
+          set -euo pipefail
+          rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            /tmp/wloc-upstream/worker/ ./
+          printf '%s\n' '782e9c5cadf215263d9d168314113e47baaa302c' > UPSTREAM_WLOC_COMMIT
+
+      - name: Verify mirrored files against upstream
+        run: |
+          set -euo pipefail
+          diff -qr \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='UPSTREAM_WLOC_COMMIT' \
+            /tmp/wloc-upstream/worker .
+
+      - name: Commit exact upstream worker snapshot
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git commit -m 'sync: mirror Yu9191/wloc worker at 782e9c5'
+          git push
